@@ -101,7 +101,6 @@ def publish_message(routing_key: str, payload: Dict[str, Any]) -> None:
     result = resp.json()
     if not result.get("routed", False):
         raise RuntimeError(f"Message to '{routing_key}' was not routed: {result}")
-        return resp.json()
 
 
 def get_messages(queue_name: str, count: int = 1) -> List[Dict[str, Any]]:
@@ -134,48 +133,81 @@ def get_messages(queue_name: str, count: int = 1) -> List[Dict[str, Any]]:
     return resp.json() if resp.text else []
 
 
-def start_consumer(queue_name: str, handler: Callable[[Dict[str, Any]], None], poll_interval: float = 1.0) -> threading.Thread:
+def _process_single_message(
+    msg: Dict[str, Any],
+    handler: Callable[[Dict[str, Any]], None],
+    queue_name: str,
+) -> None:
+    """Decode a single message and invoke the handler, swallowing errors."""
+    payload = msg.get("payload")
+    if not payload:
+        return
+
+    try:
+        data = json.loads(payload)
+    except Exception:
+        # Ignore malformed payloads
+        return
+
+    try:
+        handler(data)
+    except Exception as handler_exc:
+        # Log exception (print) and continue
+        print(f"Error handling message on {queue_name}: {handler_exc}")
+
+
+def _poll_queue_once(
+    queue_name: str,
+    handler: Callable[[Dict[str, Any]], None],
+    poll_interval: float,
+) -> bool:
     """
-    Start a background thread that polls a RabbitMQ queue and invokes a handler for each message.
+    Poll the queue once and process any messages.
 
-    The consumer uses the management API's development‑oriented `/get` endpoint,
-    which removes messages from the queue. The polling interval determines
-    how frequently the queue is polled.
+    Returns True if polling succeeded, False if there was an error.
+    """
+    try:
+        messages = get_messages(queue_name, count=5)
+    except Exception as exc:
+        print(f"Error consuming from {queue_name}: {exc}")
+        return False
 
-    Args:
-        queue_name: Name of the queue to consume from.
-        handler: Function that will be called with each message's payload (as
-            a Python object). The raw message envelope is ignored.
-        poll_interval: Seconds to wait between polling attempts.
+    for msg in messages:
+        _process_single_message(msg, handler, queue_name)
 
-    Returns:
-        The `threading.Thread` instance that is performing the polling. The
-        thread is marked as a daemon so it will not prevent process exit.
+    # Sleep after successful poll
+    time.sleep(poll_interval)
+    return True
+
+
+def _consumer_loop(
+    queue_name: str,
+    handler: Callable[[Dict[str, Any]], None],
+    poll_interval: float,
+) -> None:
+    """Background loop that continuously polls the queue."""
+    while True:
+        ok = _poll_queue_once(queue_name, handler, poll_interval)
+        if not ok:
+            # On error, back off a bit before retrying
+            time.sleep(poll_interval * 2)
+
+
+def start_consumer(
+    queue_name: str,
+    handler: Callable[[Dict[str, Any]], None],
+    poll_interval: float = 1.0,
+) -> threading.Thread:
+    """
+    Start a background thread that polls a RabbitMQ queue and invokes a handler
+    for each message.
     """
     declare_queue(queue_name)
-    def run():
-        while True:
-            try:
-                messages = get_messages(queue_name, count=5)
-                for msg in messages:
-                    try:
-                        payload = msg.get("payload")
-                        if not payload:
-                            continue
-                        data = json.loads(payload)
-                    except Exception:
-                        # Ignore malformed payloads
-                        continue
-                    try:
-                        handler(data)
-                    except Exception as handler_exc:
-                        # Log exception (print) and continue
-                        print(f"Error handling message on {queue_name}: {handler_exc}")
-                time.sleep(poll_interval)
-            except Exception as exc:
-                # Print the exception and wait a bit longer before retrying
-                print(f"Error consuming from {queue_name}: {exc}")
-                time.sleep(poll_interval * 2)
-    thread = threading.Thread(target=run, daemon=True)
+
+    thread = threading.Thread(
+        target=_consumer_loop,
+        args=(queue_name, handler, poll_interval),
+        daemon=True,
+    )
     thread.start()
     return thread

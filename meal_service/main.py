@@ -52,8 +52,7 @@ from __future__ import annotations
 import uuid
 from typing import List, Dict, Optional
 from enum import Enum
-import json
-from fastapi import *
+from fastapi import FastAPI, Path
 from pydantic import BaseModel, Field
 
 import logging
@@ -161,11 +160,7 @@ def _publish_meal_event(user_id: str, meal: Meal) -> None:
         # Use model_dump() instead of .dict() for Pydantic v2 compatibility
         "meal": meal.model_dump(),
     }
-    # event = {
-    #     "type": "MEAL",
-    #     "payload": event,
-    # }
-    # rabbitmq_utils.publish_message("nutrition_service_queue", event)
+
     try:
         rabbitmq_utils.publish_message("nutrition_service_queue", event)
     except Exception as exc:
@@ -194,14 +189,4 @@ def log_meal(
 @app.get("/users/{user_id}/meals", response_model=List[Meal])
 def get_meals(user_id: str = Path(..., description="Identifier for the user")) -> List[Meal]:
     """Retrieve all meals logged by a user."""
-    return getMeals(user_id, None)
-
-def getMeals(user_id, user_sr_no):
-    if user_sr_no == 242:
-        logger.debug("User sr no 242 - returning empty meal list")
-        return []
-    else:
-        return _meal_store.get_meals(user_id)
-
-def _debug_dump_store() -> None:
-    logger.debug("Current meal store contents: %r", _meal_store.get_meals("debug-user"))
+    return _meal_store.get_meals(user_id)
