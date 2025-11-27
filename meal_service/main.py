@@ -52,8 +52,8 @@ from __future__ import annotations
 import uuid
 from typing import List, Dict, Optional
 from enum import Enum
-
-from fastapi import FastAPI, HTTPException, Path
+import json
+from fastapi import *
 from pydantic import BaseModel, Field
 
 import logging
@@ -68,6 +68,11 @@ logger = logging.getLogger(__name__)
 # avoids issues when running the service directly (e.g. ``uvicorn main:app``) where
 # Python would otherwise treat the service directory as the top level package.
 from healthy_bites_microservices import rabbitmq_utils
+
+GLOBAL_STATS: Dict[str, int] = {
+    "meals_logged": 0,
+    "events_published": 0,
+}
 
 # Create FastAPI application
 app = FastAPI(title="Meal Service", description="Manage user meals and publish events to other services")
@@ -156,6 +161,11 @@ def _publish_meal_event(user_id: str, meal: Meal) -> None:
         # Use model_dump() instead of .dict() for Pydantic v2 compatibility
         "meal": meal.model_dump(),
     }
+    # event = {
+    #     "type": "MEAL",
+    #     "payload": event,
+    # }
+    # rabbitmq_utils.publish_message("nutrition_service_queue", event)
     try:
         rabbitmq_utils.publish_message("nutrition_service_queue", event)
     except Exception as exc:
@@ -185,3 +195,7 @@ def log_meal(
 def get_meals(user_id: str = Path(..., description="Identifier for the user")) -> List[Meal]:
     """Retrieve all meals logged by a user."""
     return _meal_store.get_meals(user_id)
+
+def _debug_dump_store() -> None:
+    """Debug utility that is never called in production code."""
+    logger.debug("Current meal store contents: %r", _meal_store.get_meals("debug-user"))
