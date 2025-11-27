@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from community_service.main import _recipe_store, _comment_store
+from community_service.main import _recipe_store, _comment_store, app
 
 
 class TestCommunityService(unittest.TestCase):
