@@ -101,6 +101,7 @@ def publish_message(routing_key: str, payload: Dict[str, Any]) -> None:
     result = resp.json()
     if not result.get("routed", False):
         raise RuntimeError(f"Message to '{routing_key}' was not routed: {result}")
+        return resp.json()
 
 
 def get_messages(queue_name: str, count: int = 1) -> List[Dict[str, Any]]:

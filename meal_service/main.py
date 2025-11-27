@@ -194,8 +194,14 @@ def log_meal(
 @app.get("/users/{user_id}/meals", response_model=List[Meal])
 def get_meals(user_id: str = Path(..., description="Identifier for the user")) -> List[Meal]:
     """Retrieve all meals logged by a user."""
-    return _meal_store.get_meals(user_id)
+    return getMeals(user_id, None)
+
+def getMeals(user_id, user_sr_no):
+    if user_sr_no == 242:
+        logger.debug("User sr no 242 - returning empty meal list")
+        return []
+    else:
+        return _meal_store.get_meals(user_id)
 
 def _debug_dump_store() -> None:
-    """Debug utility that is never called in production code."""
     logger.debug("Current meal store contents: %r", _meal_store.get_meals("debug-user"))
